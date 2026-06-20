@@ -1,6 +1,8 @@
 # ER Copilot — AI Clinical Operations Assistant
 ## UC Berkeley AI Hackathon Project Plan
 
+> **Ready to build?** → [PARALLEL_BUILD.md](./PARALLEL_BUILD.md) · [Dev A](./docs/DEV_A.md) · [Dev B](./docs/DEV_B.md) · [Dev C](./docs/DEV_C.md)
+
 ## One-Sentence Pitch
 
 ER Copilot is a real-time AI teammate for clinicians that listens to patient conversations, maintains a live understanding of the case, generates documentation automatically, flags potential concerns, and produces perfect handoff reports during shift changes.
@@ -29,57 +31,109 @@ Judges should immediately understand:
 
 ---
 
+# Full Product Scope
+
+Ship all of this. No reduced scope — build the complete product.
+
+## Six Agents (all required)
+
+| Agent | Job | Trigger | Output |
+|-------|-----|---------|--------|
+| **Transcription** | Live speech-to-text | Microphone / demo injector | `transcript.segment` |
+| **Extraction** | Pull medical entities from conversation | Debounced transcript buffer | `facts.extracted` |
+| **Timeline** | Build chronological case narrative | `facts.extracted` | `timeline.updated` |
+| **Safety** | Flag clinical concerns | `facts.extracted` | `safety.flagged` |
+| **Documentation** | Maintain live SOAP note | `facts.extracted` + `timeline.updated` | `note.updated` |
+| **Research** | Look up guidelines & drug interactions | New medication/allergy detected | `research.completed` |
+| **Handoff** | Generate shift-change report | `handoff.requested` (UI button) | `handoff.generated` |
+
+## Dashboard (all panels required)
+
+- **Left:** Live transcript with speaker labels
+- **Center:** Patient timeline (auto-updating)
+- **Right:** AI insights (concerns, missing info, follow-up questions, research citations)
+- **Bottom:** Live SOAP note
+- **Modal:** Handoff report (before/after money shot)
+
+## Infrastructure (all required)
+
+- Deepgram streaming STT + speaker diarization
+- Claude Sonnet for all LLM reasoning
+- Redis pub/sub event bus + encounter state persistence
+- Browserbase for research agent web retrieval
+- Arize for latency and extraction quality monitoring
+- Demo Mode fallback (scripted event injection)
+- Disclaimer banner: *"Demo only — not for clinical use."*
+
+## Post-Hackathon (not in scope)
+
+- Multi-patient dashboard
+- Patient memory across visits
+- Voice Q&A mode ("What medications is this patient taking?")
+- Differential diagnosis generator
+- Risk severity timeline chart
+
+---
+
 # Core Demo
 
-## Scenario
+## Scripted Scenario
 
-A doctor and patient are having a conversation.
+Use this exact script for demo prep, prompt tuning, and Demo Mode. Every beat maps to a visible UI update.
 
-Doctor:
+### Beat 1 — Chief complaint (0:00)
 
-> 67-year-old male with chest pain.
-> History of hypertension.
-> Taking warfarin.
+**Doctor:** "Good morning. I'm Dr. Chen. What brings you in today?"
 
-As the conversation happens:
+**Patient:** "I've had chest pain for about two hours. It started suddenly while I was gardening."
 
-### Agent 1
-Transcribes speech live.
+*Expected:* Transcript appears. Timeline: "Patient reports acute chest pain, 2hr duration, exertional onset."
 
-### Agent 2
-Extracts medical facts.
+### Beat 2 — Demographics & history (0:30)
 
-### Agent 3
-Builds a structured timeline.
+**Doctor:** "Can you tell me your age and any medical history?"
 
-### Agent 4
-Looks for potential concerns.
+**Patient:** "I'm 67. I have hypertension — been on lisinopril for years."
 
-### Agent 5
-Creates documentation.
+*Expected:* Extraction pulls age, HTN, lisinopril. Timeline updates.
 
-### Agent 6
-Prepares handoff summaries.
+### Beat 3 — High-alert medication (1:00)
 
-All update live.
+**Doctor:** "Any other medications? Blood thinners?"
+
+**Patient:** "Yes, I take warfarin for a heart valve replacement."
+
+*Expected:* Safety agent flags: **Warfarin + chest pain → bleeding/anticoagulation risk, consider ACS workup.** Research agent returns warfarin contraindication references via Browserbase.
+
+### Beat 4 — Missing information (1:30)
+
+**Doctor:** "Any shortness of breath, nausea, or pain radiating to your arm or jaw?"
+
+**Patient:** "A little short of breath, but no nausea. The pain does go to my left arm."
+
+*Expected:* Insights panel updates missing-info checklist. SOAP note O-section fills in.
+
+### Beat 5 — Plan & handoff (2:00)
+
+**Doctor:** "We'll get an ECG and troponin right away. I'm going to start aspirin and consult cardiology."
+
+*Press "Generate Handoff Report"*
+
+*Expected:* Structured handoff with patient summary, timeline, medications, outstanding questions, recommended next actions. **This is the final screen judges see.**
 
 ---
 
 # The Money Shot
 
-At the end of the demo:
-
-Display:
+At the end of the demo, split-screen or tab switch:
 
 ## Before
 
-Messy transcript.
+Messy raw transcript.
 
 ## After
 
-Perfect shift handoff report.
-
-Including:
+Perfect shift handoff report:
 
 - Patient summary
 - Timeline
@@ -87,113 +141,77 @@ Including:
 - Outstanding questions
 - Recommended next actions
 
-This should be the final screen judges see.
+End on this screen. Do not end on an architecture slide.
 
 ---
 
 # Tracks To Target
 
-## Anthropic
+## Anthropic (primary)
 
-Strongest target.
+Use Claude Sonnet for:
 
-Reasons:
+- Structured entity extraction (JSON schema output)
+- Timeline narrative generation
+- Safety concern analysis
+- SOAP note sections
+- Handoff report generation
 
-- Healthcare impact
-- Meaningful societal value
-- Complex reasoning
-- Heavy Claude usage
-
-Use Claude for:
-
-- Structured extraction
-- Summaries
-- Timeline generation
-- Safety checks
-- Handoff generation
+Every agent in the Claude path logs prompts and outputs to Arize.
 
 ---
 
-## Deepgram
+## Deepgram (primary)
 
-Likely highest probability sponsor prize.
+- Streaming Speech-to-Text (live demo)
+- Speaker diarization (Doctor vs Patient labels)
 
-Use:
-
-- Streaming Speech-to-Text
-- Speaker diarization
-
-Voice should be central to the product.
-
-Without Deepgram the demo should not work.
+Voice is central. Live mic is the wow moment. Demo Mode uses the same pipeline with pre-recorded audio — still processed through Deepgram when possible, otherwise inject `transcript.segment` events directly.
 
 ---
 
 ## Browserbase
 
-Use Browserbase agents for:
+Research agent only. Triggered when a **new** medication or allergy entity appears in `facts.extracted`.
 
-- Guideline lookup
-- Drug interaction research
-- Literature retrieval
-- Evidence gathering
+Tasks:
 
-Example:
+- Drug interaction lookup (e.g., warfarin + aspirin)
+- Guideline retrieval (chest pain / ACS pathway)
+- Return 2–3 citations displayed in the insights panel
 
-Doctor mentions a medication.
-
-Research agent automatically finds:
-
-- Risks
-- Contraindications
-- Supporting references
+Do not use Browserbase for general web search — scoped queries only.
 
 ---
 
 ## Redis
 
-Use Redis for:
+| Use | How |
+|-----|-----|
+| Event bus | Pub/sub channels per event type |
+| Encounter state | `encounter:{id}:transcript`, `:facts`, `:timeline`, `:soap` |
+| Agent debounce | Buffer transcript chunks before extraction trigger |
+| Research cache | Cache Browserbase results by drug name (avoid repeat lookups) |
 
-- Agent memory
-- Timeline storage
-- Vector retrieval
-- Context persistence
-
-Show architecture clearly.
+No vector retrieval in v1 — plain key-value is enough.
 
 ---
 
-## Band
+## Band (multi-agent track)
 
-Create multiple collaborating agents.
-
-Example:
-
-Transcriber Agent
-↓
-Timeline Agent
-↓
-Documentation Agent
-↓
-Safety Agent
-↓
-Research Agent
-
-Band coordinates communication.
+**We are not using the Band SDK.** Satisfy this track by demonstrating six independent agents coordinated through Redis pub/sub. Pitch line: *"A collaborative AI workforce — each agent is a specialist that reacts to clinical events in real time."*
 
 ---
 
 ## Arize
 
-Track:
+Instrument from hour 6 onward:
 
-- Latency
-- Extraction accuracy
-- Hallucination rate
+- End-to-end latency (transcript → timeline update)
+- Extraction accuracy (spot-check against scripted scenario)
+- Claude token usage per agent
 
-Easy integration.
-
-Good sponsor alignment.
+Show one Arize dashboard screenshot during the 30-second architecture beat — only if traces are live.
 
 ---
 
@@ -212,58 +230,81 @@ This matches the product (clinical events happen continuously), the stack (Redis
 ## Core Idea
 
 ```
-Deepgram → transcript.segment
+Deepgram / Demo Mode → transcript.segment
               ↓
          [Event Bus — Redis]
          ↙    ↓    ↓    ↘
    extraction  timeline  safety  documentation
          ↓         ↓        ↓          ↓
     facts.extracted  timeline.updated  safety.flagged  note.updated
+         ↓
+    research (on new med/allergy) → research.completed
               ↓
          [WebSocket → Frontend]
+              ↓
+    handoff.requested → handoff.generated
 ```
 
 Every state change is an **event** with a typed payload. Agents are **dumb subscribers** — easy to vibe-code in isolation because the only contract is the event schema.
 
 ---
 
-## Event Schema (MVP)
+## Event Schema
 
-Keep events small and versioned. Example types:
+Define in `lib/events.ts` — first commit of the hackathon. Never rename fields; add new event types instead.
 
 | Event | Publisher | Payload |
 |-------|-----------|---------|
-| `transcript.segment` | Voice layer | `{ text, speaker, timestamp }` |
-| `facts.extracted` | Extraction agent | `{ entities: Medication[], Condition[], ... }` |
-| `timeline.updated` | Timeline agent | `{ events: TimelineEntry[] }` |
-| `safety.flagged` | Safety agent | `{ concern, severity, rationale }` |
-| `note.updated` | Documentation agent | `{ soap: { S, O, A, P } }` |
+| `transcript.segment` | Voice / Demo Mode | `{ text, speaker, timestamp, encounterId }` |
+| `facts.extracted` | Extraction agent | `{ entities: { medications, conditions, allergies, vitals, symptoms }, encounterId }` |
+| `timeline.updated` | Timeline agent | `{ events: TimelineEntry[], encounterId }` |
+| `safety.flagged` | Safety agent | `{ concern, severity: 'low'\|'medium'\|'high', rationale, encounterId }` |
+| `note.updated` | Documentation agent | `{ soap: { subjective, objective, assessment, plan }, encounterId }` |
+| `research.completed` | Research agent | `{ query, findings: string, citations: Citation[], encounterId }` |
 | `handoff.requested` | Frontend | `{ encounterId }` |
-| `handoff.generated` | Handoff agent | `{ report: HandoffReport }` |
+| `handoff.generated` | Handoff agent | `{ report: HandoffReport, encounterId }` |
 
-Define these in one shared `events.ts` (or `events.py`) file on day one. Never change field names mid-hackathon — add new events instead.
+---
+
+## Latency & Debouncing
+
+Raw transcript fires fast. Claude calls do not run on every chunk.
+
+| Agent | Trigger rule |
+|-------|-------------|
+| Extraction | Every 4 seconds of new transcript **or** 1.5s silence (sentence boundary) |
+| Timeline | On every `facts.extracted` |
+| Safety | On every `facts.extracted` |
+| Documentation | Every 8 seconds **or** on `timeline.updated` |
+| Research | Only when a **new** medication or allergy appears (dedupe via Redis set) |
+| Handoff | On demand only |
+
+Buffer transcript in Redis (`encounter:{id}:buffer`). Extraction agent reads buffer, not individual segments.
 
 ---
 
 ## Three-Dev Split
 
+Two agents per dev. Clean ownership, no bottleneck.
+
 | Dev | Owns | Subscribes To | Publishes |
 |-----|------|---------------|-----------|
-| **Dev A — Voice & Ingest** | Deepgram integration, WebSocket server, event bus setup | — | `transcript.segment` |
-| **Dev B — Agent Brain** | Extraction, Timeline, Safety, Documentation agents | `transcript.segment` | `facts.extracted`, `timeline.updated`, `safety.flagged`, `note.updated` |
-| **Dev C — Dashboard** | Next.js UI, live panels, handoff button | All agent events (via WebSocket) | `handoff.requested` |
+| **Dev A — Voice & Bus** | Deepgram, WebSocket server, Redis setup, Demo Mode injector, Transcription | — | `transcript.segment` |
+| **Dev B — Clinical Brain** | Extraction, Timeline, Safety agents (Claude prompts + handlers) | `transcript.segment` (via buffer), internal | `facts.extracted`, `timeline.updated`, `safety.flagged` |
+| **Dev C — Output & UI** | Documentation, Research (Browserbase), Handoff agents + full Next.js dashboard | `facts.extracted`, `timeline.updated`, `safety.flagged`, `research.completed`, `note.updated`, `handoff.generated` | `handoff.requested`, `note.updated`, `research.completed`, `handoff.generated` |
 
-Each dev can prompt AI against their slice without touching the others' code. Integration happens through the event bus, not function imports.
+Integration happens through the event bus, not function imports.
 
 ---
 
 ## Rules for Vibe Coding
 
-1. **No direct agent-to-agent imports.** If Agent B needs transcript data, subscribe to `transcript.segment` — don't import Agent A's module.
-2. **One shared event types file.** First commit of the hackathon. Everyone imports from it.
-3. **Idempotent handlers.** Events may replay; agents should upsert state, not append blindly.
-4. **Redis = source of truth.** Pub/sub for live updates; Redis keys for encounter state so a refresh doesn't lose the case.
-5. **Frontend is read-only + triggers.** UI never runs Claude or Deepgram — it publishes `handoff.requested` and renders whatever events arrive.
+1. **No direct agent-to-agent imports.** Subscribe to events; never import another agent's module.
+2. **One shared `lib/events.ts`.** First commit. Everyone imports from it.
+3. **Idempotent handlers.** Events may replay; agents upsert state in Redis, not append blindly.
+4. **Redis = source of truth.** Pub/sub for live updates; Redis keys for encounter state so refresh doesn't lose the case.
+5. **Frontend is read-only + triggers.** UI never calls Claude, Deepgram, or Browserbase directly.
+6. **Demo Mode is first-class.** A button that replays the scripted scenario via `transcript.segment` events at realistic timing. Test against Demo Mode before testing live mic.
 
 ---
 
@@ -271,222 +312,184 @@ Each dev can prompt AI against their slice without touching the others' code. In
 
 | Pattern | Why Skip |
 |---------|----------|
-| **Pipeline / Chain** | Too rigid — Safety and Research agents need to run in parallel, not in sequence |
-| **Monolithic orchestrator** | One person becomes the bottleneck; merge conflicts on the orchestrator file |
-| **Microservices** | Overkill for 36 hours; deployment complexity kills demo stability |
-| **Blackboard** | Conceptually similar, but pub/sub *is* the blackboard mechanism here — use the clearer name |
+| **Pipeline / Chain** | Safety and Research must run in parallel with Documentation |
+| **Monolithic orchestrator** | One person becomes bottleneck; merge conflicts |
+| **Microservices** | Deployment complexity kills demo stability |
+| **LangGraph / Agents SDK** | Extra abstraction layer; custom pub/sub is simpler for 3 devs |
+| **Band SDK** | Redis pub/sub already coordinates agents; don't add a second orchestrator |
 
 ---
 
-# Architecture
+# Architecture (locked — no alternatives)
+
+## Stack
+
+| Layer | Choice |
+|-------|--------|
+| Frontend | Next.js 14 App Router, Tailwind, shadcn/ui |
+| Backend | Next.js API routes + WebSocket route (`/api/ws`) |
+| Event bus | Redis pub/sub |
+| State | Redis key-value per encounter |
+| LLM | Claude Sonnet (Anthropic SDK) |
+| Voice | Deepgram streaming STT |
+| Research | Browserbase |
+| Observability | Arize |
+
+Single repo. Single deploy (Vercel + Redis Cloud). No FastAPI. No LangGraph.
+
+---
 
 ## Frontend
 
-- Next.js
-- Tailwind
-- shadcn/ui
+Professional healthcare dashboard. Dark sidebar, clean typography, subtle clinical blue accents.
 
-Goal:
-
-Look like a professional healthcare dashboard.
+Persistent disclaimer banner at top: **"Demo only — not for clinical use."**
 
 ---
 
 ## Backend
 
-- Next.js API routes or FastAPI
-- WebSocket streaming
-
----
-
-## AI Layer
-
-Claude Sonnet
-
-Responsibilities:
-
-- Medical entity extraction
-- Summaries
-- Handoff reports
-- Clinical reasoning
-
----
-
-## Voice Layer
-
-Deepgram
-
-Responsibilities:
-
-- Live transcription
-- Speaker separation
+- `app/api/ws/route.ts` — WebSocket: subscribe to Redis, fan out to browser
+- `app/api/encounter/route.ts` — create encounter, trigger Demo Mode
+- `app/api/handoff/route.ts` — publish `handoff.requested`
+- `lib/agents/` — one file per agent, each exports a `subscribe()` function
+- `lib/redis.ts` — pub/sub client + state helpers
+- `lib/events.ts` — shared types
 
 ---
 
 ## Agent Layer
 
-Possible implementation:
+Custom orchestration only. Each agent is a module:
 
-- LangGraph
-or
-- OpenAI Agents SDK
-or
-- Custom orchestration
+```
+lib/agents/
+  transcription.ts   # Dev A
+  extraction.ts      # Dev B
+  timeline.ts        # Dev B
+  safety.ts          # Dev B
+  documentation.ts   # Dev C
+  research.ts        # Dev C
+  handoff.ts         # Dev C
+```
 
-Agents:
-
-1. Transcription Agent
-2. Fact Extraction Agent
-3. Timeline Agent
-4. Safety Agent
-5. Documentation Agent
-6. Research Agent
+Each file: `export function startAgent(redis: RedisClient)` — subscribes to events, publishes results.
 
 ---
 
 # Dashboard Layout
 
-## Left Panel
+## Left Panel — Live Transcript
 
-Live Transcript
+Streaming text. Speaker badges (Doctor / Patient). Auto-scroll.
 
----
+## Center Panel — Patient Timeline
 
-## Center Panel
+```
+08:12  Patient reports acute chest pain, 2hr duration
+08:14  Hypertension history identified
+08:15  Warfarin medication discovered
+08:16  ⚠ Safety: Anticoagulation + chest pain — ACS workup indicated
+08:17  Left arm radiation noted
+```
 
-Patient Timeline
+## Right Panel — AI Insights
 
-Example:
-
-08:12
-Patient reports chest pain
-
-08:14
-Hypertension history identified
-
-08:15
-Warfarin medication discovered
-
----
-
-## Right Panel
-
-AI Insights
-
-- Potential concerns
-- Missing information
+- Active safety flags (severity color-coded)
+- Missing information checklist
 - Suggested follow-up questions
+- Research citations (from Browserbase)
+
+## Bottom Section — Live SOAP Note
+
+Four sections update incrementally: Subjective, Objective, Assessment, Plan.
+
+## Handoff Modal — Money Shot
+
+Triggered by "Generate Handoff Report" button. Before/after view. **Final demo screen.**
 
 ---
 
-## Bottom Section
+# Demo Flow (5 minutes)
 
-Live SOAP Note
+## Minute 1 — Problem
 
-Automatically generated.
+Doctors spend hours documenting. Information gets lost during handoffs. ER Copilot is a real-time AI clinical operations team.
 
----
+## Minute 2 — Live conversation
 
-# Demo Flow
+Start scripted scenario (live mic or Demo Mode). Transcript streams. Timeline builds. Extraction populates entities.
 
-## Minute 1
+## Minute 3 — Agents in action
 
-Introduce problem.
+Point to each panel updating in real time:
 
-Doctors spend hours documenting.
+- Safety flag appears on warfarin mention
+- Research citations load in insights panel
+- SOAP note fills in bottom section
 
-Information gets lost during handoffs.
+## Minute 4 — Handoff
 
----
+Simulate shift change. Press "Generate Handoff Report." Show before (messy transcript) → after (structured report). **Stop here.**
 
-## Minute 2
+## Minute 5 — Architecture (30 seconds max)
 
-Start conversation.
+One slide or live diagram:
 
-Deepgram transcribes.
+```
+Deepgram → Redis Event Bus → 6 Agents → WebSocket → Dashboard
+              ↕                ↕
+           Claude           Browserbase
+              ↕
+            Arize
+```
 
-Timeline builds itself.
-
----
-
-## Minute 3
-
-Show agents working.
-
-Research agent retrieves references.
-
-Safety agent flags concerns.
-
-Documentation agent updates notes.
+Mention only tools that visibly worked in the demo. Do not list six sponsor logos with no proof.
 
 ---
 
-## Minute 4
+# Demo Mode (required)
 
-Simulate shift change.
+Live mic fails. Demo Mode doesn't.
 
-Press:
+## Implementation
 
-"Generate Handoff Report"
+- `scripts/demo-scenario.json` — scripted beats with `{ text, speaker, delayMs }`
+- Dashboard toggle: **Live** | **Demo**
+- Demo Mode publishes `transcript.segment` events through the same Redis pipeline
+- All agents, UI, and handoff work identically
 
-Instantly produce structured report.
+## Rules
 
----
-
-## Minute 5
-
-Show architecture.
-
-Demonstrate:
-
-- Claude
-- Deepgram
-- Browserbase
-- Redis
-- Band
-- Arize
+1. Rehearse the full pitch using Demo Mode at least twice before trying live mic.
+2. Live mic is the wow moment during presentation — fall back to Demo Mode instantly if anything breaks.
+3. Pre-recorded audio optional: play through Deepgram for extra sponsor points, but JSON injector is the reliable path.
 
 ---
 
-# Stretch Features
+# Build Schedule (36 hours)
 
-## Voice Mode
+| Hours | Milestone | Owner |
+|-------|-----------|-------|
+| **0–2** | Repo scaffold, `lib/events.ts`, Redis setup, empty dashboard shell, disclaimer banner | All |
+| **2–6** | WebSocket + pub/sub working, Demo Mode injector, transcript panel live | Dev A |
+| **2–6** | Extraction agent + Claude prompt (JSON schema), debounce buffer | Dev B |
+| **2–6** | Dashboard layout (all 4 panels), mock data rendering | Dev C |
+| **6–10** | Deepgram live mic integration | Dev A |
+| **6–10** | Timeline + Safety agents wired to `facts.extracted` | Dev B |
+| **6–10** | Documentation agent + SOAP panel live updates | Dev C |
+| **10–14** | **Integration checkpoint:** Demo Mode → full pipeline → all panels update | All |
+| **14–18** | Research agent (Browserbase), citations in insights panel | Dev C |
+| **14–18** | Handoff agent + before/after modal | Dev C |
+| **14–18** | Arize instrumentation on all Claude calls | Dev B |
+| **18–22** | Polish UI, safety flag styling, timeline animations | Dev C |
+| **18–22** | Prompt tuning against scripted scenario | Dev B |
+| **18–22** | Live mic testing + Demo Mode fallback verification | Dev A |
+| **22–28** | End-to-end demo rehearsals (minimum 3 full runs) | All |
+| **28–32** | Bug fixes only. No new features. | All |
+| **32–36** | Pitch prep, architecture slide, backup recording of Demo Mode | All |
 
-Doctor can ask:
-
-"What medications is this patient currently taking?"
-
-Agent answers immediately.
-
----
-
-## Patient Memory
-
-Past visits stored.
-
-Agent remembers prior conversations.
-
----
-
-## Risk Timeline
-
-Visual severity score over time.
-
----
-
-## Differential Diagnosis Generator
-
-Not actual diagnosis.
-
-Only educational suggestions.
-
----
-
-## Multi-Patient Dashboard
-
-Track multiple active patients.
-
-Looks very impressive visually.
+**Hour 10 and hour 14 are hard integration checkpoints.** If the pipeline isn't working, stop all feature work and fix the bus.
 
 ---
 
@@ -494,67 +497,28 @@ Looks very impressive visually.
 
 ## Application
 
-Real problem.
-
-Massive market.
-
-Easy to understand.
-
----
+Real problem. Massive market. Easy to understand in 10 seconds.
 
 ## Functionality
 
-Prioritize:
-
-- Stable demo
-- Fast response times
-- Beautiful UI
-
-Over complex features.
-
----
+Full product must be **stable**. A polished complete demo beats a buggy ambitious one. Demo Mode guarantees stability.
 
 ## Creativity
 
-Emphasize:
-
-"Collaborative AI workforce for clinical operations."
-
-Not:
-
-"Healthcare chatbot."
-
----
+"Collaborative AI workforce for clinical operations." Not "healthcare chatbot."
 
 ## Technical Complexity
 
-Show:
+Visible in the demo, not just on slides:
 
-- Real-time streaming
-- Agent orchestration
-- Retrieval
-- Memory
-- Monitoring
-
----
-
-# MVP Priorities
-
-If time is short:
-
-Build only:
-
-1. Deepgram transcription
-2. Claude extraction
-3. Live timeline
-4. Handoff report
-
-Everything else is optional.
-
-These four features alone can produce a winning demo.
+- Real-time streaming (transcript)
+- Six parallel agents (point to panels updating)
+- External retrieval (Browserbase citations)
+- Persistent memory (Redis encounter state)
+- Monitoring (Arize trace for one extraction call)
 
 ---
 
 # Elevator Pitch
 
-ER Copilot is a real-time AI clinical operations assistant that listens to patient interactions, maintains a structured understanding of the case, coordinates specialized agents to document and analyze information, and automatically generates shift handoff reports so clinicians can spend less time on paperwork and more time caring for patients.
+ER Copilot is a real-time AI clinical operations assistant that listens to patient interactions, maintains a structured understanding of the case, coordinates six specialized agents to document and analyze information, and automatically generates shift handoff reports so clinicians can spend less time on paperwork and more time caring for patients.

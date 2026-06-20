@@ -1,0 +1,68 @@
+{
+  "encounterId": "demo-encounter-001",
+  "transcript": [
+    { "speaker": "doctor", "text": "Good morning. I'm Dr. Chen. What brings you in today?", "timestamp": "2026-06-20T08:12:00.000Z" },
+    { "speaker": "patient", "text": "I've had chest pain for about two hours. It started suddenly while I was gardening.", "timestamp": "2026-06-20T08:12:30.000Z" },
+    { "speaker": "doctor", "text": "Can you tell me your age and any medical history?", "timestamp": "2026-06-20T08:13:00.000Z" },
+    { "speaker": "patient", "text": "I'm 67. I have hypertension — been on lisinopril for years.", "timestamp": "2026-06-20T08:13:30.000Z" },
+    { "speaker": "doctor", "text": "Any other medications? Blood thinners?", "timestamp": "2026-06-20T08:14:00.000Z" },
+    { "speaker": "patient", "text": "Yes, I take warfarin for a heart valve replacement.", "timestamp": "2026-06-20T08:14:30.000Z" }
+  ],
+  "facts": {
+    "medications": [
+      { "name": "lisinopril" },
+      { "name": "warfarin", "dose": "unknown" }
+    ],
+    "conditions": ["hypertension", "heart valve replacement"],
+    "allergies": [],
+    "vitals": {},
+    "symptoms": ["chest pain", "shortness of breath", "left arm pain"],
+    "demographics": { "age": 67, "sex": "male" }
+  },
+  "timeline": [
+    { "id": "tl-1", "timestamp": "2026-06-20T08:12:30.000Z", "summary": "Patient reports acute chest pain, 2hr duration, exertional onset", "source": "extraction" },
+    { "id": "tl-2", "timestamp": "2026-06-20T08:13:30.000Z", "summary": "Hypertension history identified; lisinopril", "source": "extraction" },
+    { "id": "tl-3", "timestamp": "2026-06-20T08:14:30.000Z", "summary": "Warfarin medication discovered", "source": "extraction" },
+    { "id": "tl-4", "timestamp": "2026-06-20T08:14:35.000Z", "summary": "Safety: Anticoagulation + chest pain — ACS workup indicated", "source": "safety" }
+  ],
+  "safetyFlags": [
+    {
+      "concern": "Warfarin + chest pain — anticoagulation complicates ACS management",
+      "severity": "high",
+      "rationale": "Patient on warfarin presenting with chest pain and left arm radiation. Balance bleeding vs thrombotic risk.",
+      "flaggedAt": "2026-06-20T08:14:35.000Z"
+    }
+  ],
+  "soap": {
+    "subjective": "67M with 2hr acute chest pain, exertional onset, left arm radiation, mild SOB. PMH: HTN, mechanical heart valve. Meds: lisinopril, warfarin.",
+    "objective": "Pending: ECG, troponin. Vitals not yet documented.",
+    "assessment": "Acute chest pain concerning for ACS in anticoagulated patient with cardiac history.",
+    "plan": "ECG, troponin, aspirin (consider bleeding risk), cardiology consult."
+  },
+  "research": {
+    "query": "warfarin chest pain anticoagulation ACS",
+    "findings": "Anticoagulated patients with ACS require careful balance of antithrombotic therapy. Warfarin may need reversal depending on bleeding risk.",
+    "citations": [
+      { "title": "ACCF/AHA Guidelines — Anticoagulation in ACS", "url": "https://example.com/guideline", "snippet": "Management of anticoagulated patients with ACS..." }
+    ]
+  },
+  "handoff": {
+    "patientSummary": "67-year-old male with acute chest pain (2hr), HTN, mechanical heart valve on warfarin and lisinopril.",
+    "timeline": [],
+    "currentMedications": [
+      { "name": "lisinopril" },
+      { "name": "warfarin" }
+    ],
+    "outstandingQuestions": [
+      "Current INR?",
+      "Any prior cardiac interventions beyond valve replacement?",
+      "Full pain characterization (quality, severity 1-10)?"
+    ],
+    "recommendedActions": [
+      "Stat ECG and troponin",
+      "Cardiology consult",
+      "Assess bleeding vs thrombotic risk before additional antiplatelet therapy"
+    ],
+    "generatedAt": "2026-06-20T08:20:00.000Z"
+  }
+}
