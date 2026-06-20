@@ -52,7 +52,13 @@ class RedisBus:
         self._publisher = publisher
         self._subscriber = subscriber
         self._local_handlers: Dict[str, Set[EventHandler]] = {}
+        self._pubsub = None
         self._started = False
+
+    async def _get_pubsub(self):
+        if self._pubsub is None:
+            self._pubsub = self._subscriber.pubsub()
+        return self._pubsub
 
     async def _start_listener(self) -> None:
         if self._started:
@@ -61,8 +67,7 @@ class RedisBus:
         asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
-        from redis.asyncio.client import PubSub
-        pubsub: PubSub = self._subscriber.pubsub()
+        pubsub = await self._get_pubsub()
         try:
             while True:
                 msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
@@ -108,7 +113,7 @@ class RedisBus:
         if channel not in self._local_handlers:
             self._local_handlers[channel] = set()
             try:
-                pubsub = self._subscriber.pubsub()
+                pubsub = await self._get_pubsub()
                 await pubsub.subscribe(pubsub_channel(channel))
             except Exception as e:
                 logger.warning("[bus/redis] subscribe failed for %s: %s", channel, e)

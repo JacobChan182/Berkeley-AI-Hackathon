@@ -25,8 +25,17 @@ export async function GET() {
       anthropic: {
         configured: Boolean(process.env.ANTHROPIC_API_KEY),
         note: process.env.ANTHROPIC_API_KEY
-          ? "key present — agents use Claude"
-          : "no key — agents use heuristic fallbacks",
+          ? "key present — agents use Claude (NIM fallback if set)"
+          : "no key — agents use NIM or heuristic fallbacks",
+      },
+      nvidia_nim: {
+        configured: Boolean(
+          process.env.NVIDIA_API_KEY || process.env.NIM_API_KEY
+        ),
+        note:
+          process.env.NVIDIA_API_KEY || process.env.NIM_API_KEY
+            ? "key present — fallback LLM via NVIDIA NIM"
+            : "no key — no NIM fallback",
       },
       browserbase: {
         configured: Boolean(process.env.BROWSERBASE_API_KEY),

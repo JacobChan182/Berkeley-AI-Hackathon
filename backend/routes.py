@@ -56,9 +56,19 @@ async def status():
             "anthropic": {
                 "configured": bool(os.environ.get("ANTHROPIC_API_KEY")),
                 "note": (
-                    "key present — agents use Claude"
+                    "key present — agents use Claude (NIM fallback if set)"
                     if os.environ.get("ANTHROPIC_API_KEY")
-                    else "no key — agents use heuristic fallbacks"
+                    else "no key — agents use NIM or heuristic fallbacks"
+                ),
+            },
+            "nvidia_nim": {
+                "configured": bool(
+                    os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
+                ),
+                "note": (
+                    "key present — fallback LLM via NVIDIA NIM"
+                    if os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY")
+                    else "no key — no NIM fallback"
                 ),
             },
             "browserbase": {

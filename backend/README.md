@@ -10,7 +10,8 @@ backend/
 ├── requirements.txt
 ├── events.py                # Shared event types (dataclasses)
 ├── bus.py                   # Event bus (Redis or in-memory)
-├── claude.py                # Anthropic Claude wrapper
+├── claude.py                # Claude primary + NVIDIA NIM fallback
+├── nim.py                   # NVIDIA NIM (integrate.api.nvidia.com)
 ├── debounce.py              # Async debounce utility
 ├── redis_layer/
 │   ├── client.py            # Redis async client
@@ -58,6 +59,7 @@ Copy the root `.env.example` to `.env` and fill in your keys:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+NVIDIA_API_KEY=nvapi-...      # optional NIM fallback
 DEEPGRAM_API_KEY=...          # optional
 REDIS_URL=redis://localhost:6379  # optional (in-memory fallback if omitted)
 ```
