@@ -1,6 +1,3 @@
-export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { ensureAgentsStarted } = await import("@/lib/agents/runtime");
-    await ensureAgentsStarted();
-  }
-}
+// Agents are now managed by the Python FastAPI backend (backend/main.py).
+// This file is kept as a no-op placeholder.
+export async function register() {}
