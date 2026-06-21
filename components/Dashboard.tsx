@@ -138,29 +138,16 @@ export function Dashboard({ replayEncounterId }: { replayEncounterId?: string })
                 Sessions
               </Link>
 
-              <div className="flex overflow-hidden rounded-lg border border-[var(--line-strong)]">
-                <button
-                  onClick={() => startEncounter("demo")}
-                  disabled={state.mode === "demo" && state.loading}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    state.mode === "demo"
-                      ? "bg-clinical-500 text-ink-950"
-                      : "bg-transparent text-[var(--text-muted)] hover:bg-white/5"
-                  }`}
-                >
-                  {state.mode === "demo" && state.loading ? "Running…" : "Demo"}
-                </button>
-                <button
+              <button
                   onClick={() => startEncounter("live")}
-                  className={`border-l border-[var(--line-strong)] px-4 py-2 text-sm font-medium transition-colors ${
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
                     state.mode === "live"
                       ? "bg-signal-500 text-white"
-                      : "bg-transparent text-[var(--text-muted)] hover:bg-white/5"
+                      : "border border-[var(--line-strong)] bg-transparent text-[var(--text-muted)] hover:bg-white/5"
                   }`}
                 >
-                  Live
+                  {state.mode === "live" ? "Live" : "Start Session"}
                 </button>
-              </div>
 
               <LiveMic active={state.mode === "live"} onTranscript={pushTranscript} />
             </>

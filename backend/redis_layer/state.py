@@ -195,8 +195,6 @@ async def append_event_log(
     at: Optional[str] = None,
 ) -> None:
     meta = await get_session_meta(encounter_id)
-    if meta and meta.get("mode") == "demo":
-        return
     ts = at or datetime.now(timezone.utc).isoformat()
     if channel in _ACTIVITY_CHANNELS:
         payload_ts = payload.get("timestamp") or payload.get("extractedAt") or payload.get("flaggedAt")
@@ -240,8 +238,6 @@ async def ensure_session_saved(
     if not meta or meta.get("status") != "pending":
         return False
     mode = meta.get("mode", "live")
-    if mode == "demo":
-        return False
     started_at = activity_at or datetime.now(timezone.utc).isoformat()
     await register_session(encounter_id, mode, started_at)
     return True
@@ -288,11 +284,11 @@ async def complete_session(
 
 
 async def finalize_session(encounter_id: str) -> None:
-    """End a session — discard demo/pending; complete live sessions with activity."""
+    """End a session — discard pending sessions; complete active live sessions."""
     meta = await get_session_meta(encounter_id)
     if not meta:
         return
-    if meta.get("mode") == "demo" or meta.get("status") == "pending":
+    if meta.get("status") == "pending":
         await discard_session(encounter_id)
         return
     await complete_session(encounter_id)
@@ -309,8 +305,6 @@ async def list_sessions() -> List[Dict[str, Any]]:
     sessions: List[Dict[str, Any]] = []
     for encounter_id, _score in entries:
         meta = await get_session_meta(encounter_id) or {}
-        if meta.get("mode") == "demo":
-            continue
         started_at = meta.get("startedAt") or (await _get(EncounterKeys.encounter_start(encounter_id)))
         sessions.append(
             {
@@ -322,53 +316,6 @@ async def list_sessions() -> List[Dict[str, Any]]:
             }
         )
     return sessions
-
-
-def _encounter_id_from_meta_key(key: str) -> Optional[str]:
-    # encounter:{id}:meta
-    parts = key.split(":")
-    if len(parts) >= 3 and parts[0] == "encounter" and parts[-1] == "meta":
-        return ":".join(parts[1:-1])
-    return None
-
-
-async def purge_all_demo_sessions() -> int:
-    """Remove all demo sessions from the index and delete their Redis keys."""
-    purged_ids: set[str] = set()
-
-    for encounter_id, _score in await _zrevrange(SESSIONS_INDEX):
-        meta = await get_session_meta(encounter_id) or {}
-        if meta.get("mode") == "demo":
-            purged_ids.add(encounter_id)
-
-    redis = get_redis_publisher()
-    if redis:
-        try:
-            async for key in redis.scan_iter(match="encounter:*:meta"):
-                key_str = key.decode() if isinstance(key, bytes) else str(key)
-                encounter_id = _encounter_id_from_meta_key(key_str)
-                if not encounter_id:
-                    continue
-                meta = await load_json(key_str)
-                if meta and meta.get("mode") == "demo":
-                    purged_ids.add(encounter_id)
-        except Exception as e:
-            logger.warning("[state] demo purge scan failed: %s", e)
-    else:
-        for key in list(_memory_store.keys()):
-            if not key.endswith(":meta"):
-                continue
-            encounter_id = _encounter_id_from_meta_key(key)
-            if not encounter_id:
-                continue
-            meta = await load_json(key)
-            if meta and meta.get("mode") == "demo":
-                purged_ids.add(encounter_id)
-
-    for encounter_id in purged_ids:
-        await discard_session(encounter_id)
-
-    return len(purged_ids)
 
 
 def _parse_transcript_lines(raw: str) -> List[Dict[str, str]]:
@@ -390,7 +337,7 @@ def _parse_transcript_lines(raw: str) -> List[Dict[str, str]]:
 
 async def get_encounter_snapshot(encounter_id: str) -> Optional[Dict[str, Any]]:
     meta = await get_session_meta(encounter_id)
-    if not meta or meta.get("status") == "pending" or meta.get("mode") == "demo":
+    if not meta or meta.get("status") == "pending":
         return None
 
     started_at = (await _get(EncounterKeys.encounter_start(encounter_id))) or meta.get("startedAt")

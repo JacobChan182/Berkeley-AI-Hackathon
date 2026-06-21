@@ -300,7 +300,7 @@ export function VisionCapture({
         ) : (
           <div className="flex h-full w-full items-center justify-center px-4 text-center">
             <p className="font-mono text-xs text-[var(--text-faint)]">
-              Camera unavailable — demo runs from the injector
+              Camera unavailable
             </p>
           </div>
         )}

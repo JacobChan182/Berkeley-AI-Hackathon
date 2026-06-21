@@ -2,7 +2,7 @@
 Redis key conventions — mirrors lib/redis/keys.ts.
 """
 
-ENCOUNTER_ID = "demo-encounter-001"
+ENCOUNTER_ID = ""
 
 PUBSUB_PREFIX = "nos:"
 SESSIONS_INDEX = "nos:sessions"

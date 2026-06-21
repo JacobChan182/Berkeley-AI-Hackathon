@@ -7,8 +7,7 @@ vision.captured event to the event bus. The safety agent already subscribes to
 vision.captured and performs the cross-check / merge (see agents/safety.py).
 
 If ANTHROPIC_API_KEY is missing or the Claude call fails, we return a graceful
-"none" result and DO NOT publish — keeping the demo injector as the source of
-truth.
+"none" result and DO NOT publish.
 """
 from __future__ import annotations
 
@@ -165,8 +164,8 @@ async def handle_vision_frame(frame_base64: str, encounter_id: str) -> dict:
 # interaction cross-check. THIS agent handles the other half of the spec —
 # "merges into entities" — so a camera-identified medication also flows into the
 # live extracted facts (EXTRACTED chips, SOAP, research, re-check). It runs for
-# BOTH the live /api/vision path and the demo injector, since both publish
-# vision.captured. The med is tagged source="vision" so the handoff can show its
+# BOTH the live /api/vision path and any other publisher of vision.captured.
+# The med is tagged source="vision" so the handoff can show its
 # camera provenance.
 
 async def start_vision_agent(bus: InMemoryBus | RedisBus) -> Callable[[], None]:
