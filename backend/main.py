@@ -1,5 +1,5 @@
 """
-ER Copilot — Python FastAPI backend.
+Nos — Python FastAPI backend.
 
 Replaces the Next.js API routes (app/api/) and lib/ backend logic.
 The Next.js frontend proxies all /api/* requests to this server.
@@ -38,14 +38,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Start all agents on server boot; stop them on shutdown."""
     await ensure_agents_started()
-    logger.info("[main] ER Copilot Python backend ready")
+    logger.info("[main] Nos Python backend ready")
     yield
     await stop_all_agents()
-    logger.info("[main] ER Copilot Python backend shutdown")
+    logger.info("[main] Nos Python backend shutdown")
 
 
 app = FastAPI(
-    title="ER Copilot API",
+    title="Nos API",
     description="Real-time AI clinical operations assistant backend",
     version="1.0.0",
     lifespan=lifespan,
@@ -65,4 +65,4 @@ app.include_router(api_router)
 
 @app.get("/")
 async def root():
-    return {"service": "er-copilot-backend", "status": "ok"}
+    return {"service": "nos-backend", "status": "ok"}

@@ -37,7 +37,7 @@ export function Dashboard() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="bg-clinical-900 text-white px-6 py-3 flex items-center justify-between shadow-md">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">ER Copilot</h1>
+          <h1 className="text-xl font-bold tracking-tight">Nos</h1>
           <p className="text-clinical-200 text-xs">AI Clinical Operations Assistant</p>
         </div>
 

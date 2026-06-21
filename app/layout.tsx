@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ER Copilot — AI Clinical Operations Assistant",
+  title: "Nos — AI Paramedic Copilot",
   description: "Real-time AI teammate for clinicians",
 };
 
