@@ -111,11 +111,9 @@ export function SessionLogList() {
                   <div className="mt-1.5 flex items-center gap-2">
                     <span
                       className={`rounded px-2 py-0.5 font-mono text-[11px] font-medium capitalize ${
-                        session.mode === "demo"
-                          ? "bg-clinical-400/15 text-clinical-200"
-                          : session.mode === "live"
-                            ? "bg-vitals-400/15 text-vitals-400"
-                            : "bg-white/5 text-[var(--text-faint)]"
+                        session.mode === "live"
+                          ? "bg-vitals-400/15 text-vitals-400"
+                          : "bg-white/5 text-[var(--text-faint)]"
                       }`}
                     >
                       {session.mode}

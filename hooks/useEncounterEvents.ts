@@ -44,7 +44,7 @@ export interface EncounterState {
   visionItems: VisionItem[];
   /** Encounter location phase, derived from telemetry events. */
   phase: EncounterPhase;
-  mode: "idle" | "demo" | "live";
+  mode: "idle" | "live";
   loading: boolean;
   /** Which agents fired in the last 3s (for activity indicator) */
   activeAgents: Set<string>;
@@ -81,7 +81,7 @@ type Action =
   | { type: "DISCONNECTED" }
   | { type: "SET_MODE"; mode: EncounterState["mode"] }
   | { type: "SET_LOADING"; loading: boolean }
-  | { type: "SET_ENCOUNTER"; encounterId: string; startedAt: string; mode: EncounterState["mode"] }
+  | { type: "SET_ENCOUNTER"; encounterId: string; startedAt: string; mode: "live" }
   | { type: "HYDRATE"; snapshot: EncounterSnapshot }
   | { type: "RESET" }
   | { type: "AGENT_ACTIVE"; agent: string }
@@ -178,10 +178,8 @@ function phaseFromTimeline(timeline: TimelineEntry[]): EncounterPhase {
 }
 
 function snapshotToState(snapshot: EncounterSnapshot): Partial<EncounterState> {
-  const mode =
-    snapshot.meta?.mode === "demo" || snapshot.meta?.mode === "live"
-      ? snapshot.meta.mode
-      : "idle";
+  const mode: EncounterState["mode"] =
+    snapshot.meta?.mode === "live" ? "live" : "idle";
   const timeline = snapshot.timeline ?? [];
   return {
     encounterId: snapshot.encounterId,
@@ -483,9 +481,8 @@ export function useEncounterEvents(options: UseEncounterEventsOptions = {}) {
     });
   }, [readOnly, replayEncounterId]);
 
-  const startEncounter = useCallback(async (mode: "demo" | "live") => {
+  const startEncounter = useCallback(async (mode: "live") => {
     if (readOnly) return;
-    dispatch({ type: "SET_LOADING", loading: mode === "demo" });
 
     const res = await fetch("/api/encounter", {
       method: "POST",
@@ -498,7 +495,7 @@ export function useEncounterEvents(options: UseEncounterEventsOptions = {}) {
     const data = (await res.json()) as {
       encounterId: string;
       startedAt: string;
-      mode: "demo" | "live";
+      mode: "live";
     };
 
     sessionStorage.setItem(ACTIVE_ENCOUNTER_KEY, data.encounterId);
@@ -509,11 +506,6 @@ export function useEncounterEvents(options: UseEncounterEventsOptions = {}) {
       startedAt: data.startedAt,
       mode: data.mode,
     });
-    dispatch({ type: "SET_LOADING", loading: mode === "demo" });
-
-    if (mode === "demo") {
-      setTimeout(() => dispatch({ type: "SET_LOADING", loading: false }), 30000);
-    }
   }, [readOnly]);
 
   const requestHandoff = useCallback(async () => {

@@ -24,7 +24,7 @@ export interface VisionItem {
 export interface SessionSummary {
   encounterId: string;
   startedAt: string;
-  mode: "demo" | "live" | "unknown";
+  mode: "live" | "unknown";
   status: "active" | "completed" | "unknown";
   endedAt?: string;
 }
