@@ -5,11 +5,13 @@ so agents can fall through to heuristic fallbacks.
 """
 from __future__ import annotations
 
+import anthropic
 import asyncio
 import logging
 import os
 from typing import Any, Optional, TypeVar
 
+from config import AGENT_MODELS, AGENT_MAX_TOKENS, get_model, get_max_tokens
 from llm_parse import parse_json_from_llm_text
 from nim import call_nim_json, has_nim
 
@@ -29,8 +31,11 @@ def _get_client():
     if _client is None:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if api_key:
-            import anthropic
-            _client = anthropic.AsyncAnthropic(api_key=api_key)
+            base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+            kwargs = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            _client = anthropic.AsyncAnthropic(**kwargs)
     return _client
 
 
@@ -42,38 +47,6 @@ def has_llm() -> bool:
     return has_claude() or has_nim()
 
 
-HAIKU_MODEL = "claude-haiku-4-5"
-SONNET_MODEL = "claude-sonnet-4-6"
-
-# Per-agent model/token overrides.
-# Safety uses Sonnet — it's the highest-stakes reasoning in the system.
-# Handoff uses Sonnet for quality. Timeline/extraction use Haiku for speed.
-AGENT_MODELS: dict[str, str] = {}
-AGENT_MAX_TOKENS: dict[str, int] = {
-    "handoff": 4096,
-    "safety": 2048,
-}
-
-
-def _refresh_agent_models() -> None:
-    AGENT_MODELS.clear()
-    AGENT_MODELS.update({
-        "safety": os.environ.get("ANTHROPIC_MODEL_SAFETY", SONNET_MODEL),
-        "handoff": os.environ.get("ANTHROPIC_MODEL_HANDOFF", SONNET_MODEL),
-        "timeline": os.environ.get("ANTHROPIC_MODEL_TIMELINE", HAIKU_MODEL),
-    })
-
-
-_refresh_agent_models()
-
-
-def _claude_model(agent_name: str) -> str:
-    _refresh_agent_models()
-    return AGENT_MODELS.get(agent_name) or os.environ.get("ANTHROPIC_MODEL", HAIKU_MODEL)
-
-
-def _max_tokens_for(agent_name: str) -> int:
-    return AGENT_MAX_TOKENS.get(agent_name, 2048)
 
 
 async def _call_claude_json(system: str, user: str, agent_name: str) -> Optional[Any]:
@@ -82,8 +55,8 @@ async def _call_claude_json(system: str, user: str, agent_name: str) -> Optional
         return None
 
     full_system = system + JSON_SYSTEM_SUFFIX
-    model = _claude_model(agent_name)
-    max_tokens = _max_tokens_for(agent_name)
+    model = get_model(agent_name)
+    max_tokens = get_max_tokens(agent_name)
 
     for attempt in range(2):
         try:

@@ -12,12 +12,14 @@ truth.
 """
 from __future__ import annotations
 
+import anthropic
 import logging
 import os
 from datetime import datetime, timezone
 from typing import Callable
 
 from bus import InMemoryBus, RedisBus, get_event_bus
+from config import get_model, get_max_tokens
 from events import (
     EVENT_CHANNELS,
     Medication,
@@ -48,8 +50,11 @@ def _get_client():
     if _client is None:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if api_key:
-            import anthropic
-            _client = anthropic.AsyncAnthropic(api_key=api_key)
+            base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
+            kwargs = {"api_key": api_key}
+            if base_url:
+                kwargs["base_url"] = base_url
+            _client = anthropic.AsyncAnthropic(**kwargs)
     return _client
 
 
@@ -79,8 +84,8 @@ async def identify_frame(frame_base64: str) -> dict:
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=500,
+            model=get_model("vision"),
+            max_tokens=get_max_tokens("vision"),
             messages=[{
                 "role": "user",
                 "content": [

@@ -69,7 +69,7 @@ def _fallback_scenario() -> Dict[str, Any]:
     for i, (speaker, text) in enumerate(lines):
         beats.append({
             "id": f"fallback-{i + 1}",
-            "delayMs": i * 1000,
+            "delayMs": i * 2000,
             "type": "transcript",
             "speaker": speaker,
             "text": text,
