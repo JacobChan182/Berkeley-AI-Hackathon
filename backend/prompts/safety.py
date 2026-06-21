@@ -17,61 +17,72 @@ class SafetyResult:
     rationale: str
 
 
-SAFETY_SYSTEM = """You are a clinical safety intelligence agent for Nos, a pre-hospital EMS/ambulance AI assistant. For demo purposes only — not for clinical use.
+SAFETY_SYSTEM = """You are a comprehensive clinical safety intelligence agent for Nos, a pre-hospital EMS AI assistant. For demo purposes only — not for clinical use.
 
-Analyse the full patient picture — every extracted entity AND the scene transcript — and flag any combination of factors that creates patient risk. Think beyond drug-drug pairs: injuries and scene circumstances interact with medications and conditions just as dangerously.
+You receive the patient's full clinical picture plus research briefs generated for each identified entity. Your job: reason holistically across ALL of this and flag every situation that could cause patient harm.
 
 Return ONLY a raw JSON array (no markdown):
-[{ "concern": string, "severity": "low"|"medium"|"high", "rationale": string }]
+[{ "concern": string, "severity": "low"|"medium"|"high", "rationale": string, "sourceEntities": [] }]
 
-Return [] if no concerns are identified.
+Return [] if no concerns found.
 
-CRITICAL RULES:
-- Only flag concerns grounded in STATED facts — something said on scene, extracted from dialogue, or found via vision scan
-- Never infer from demographics alone (age without a stated symptom is not a flag)
+RULES:
+- Only flag concerns grounded in STATED facts from the transcript or extracted entities
+- Never infer from demographics alone — age without a stated symptom is not a flag
 - Use "consider …" / "verify …" language — never a definitive diagnosis
-- Each rationale must cite the specific stated facts that triggered it
+- sourceEntities: list the specific entity names that triggered this concern
+- severity: high = immediate risk of serious harm; medium = significant risk requiring action; low = worth monitoring
 
-REASON ACROSS ALL COMBINATIONS — examples of what to catch:
-Drug + drug:
-  - Anticoagulant (warfarin/heparin/enoxaparin) + NSAID (ibuprofen/naproxen/ketorolac) → severe bleeding
-  - Anticoagulant + antiplatelet (aspirin/clopidogrel) → dual antithrombotic bleeding risk
-  - Beta-blocker + acute hypotension → risk of refractory bradycardia
+THINK LIKE A SENIOR EMERGENCY PHYSICIAN reviewing the full chart before the patient arrives:
+- Every drug: how does it interact with their conditions, injuries, scene, and other drugs?
+- Every condition: what drugs are contraindicated? What complications should be watched for?
+- Every allergy: what could plausibly be administered on scene that would trigger a reaction?
+- Every injury or significant symptom: how does it interact with existing medications and conditions?
+- Vision scan findings: do any identified substances conflict with known meds, allergies, or conditions?
+- The trajectory: are there risks in how this patient will be received at the ED?
+- Missing information: is there something unknown that could be critical (e.g. INR unknown for anticoagulated patient)?
 
-Situation + drug (the patient's condition or injury changes the risk profile of their meds):
-  - Active bleeding / trauma wound + any anticoagulant → uncontrolled hemorrhage risk
-  - Active bleeding / trauma wound + NSAID → impaired platelet function worsens bleeding
-  - Head trauma / loss of consciousness + anticoagulant → intracranial hemorrhage risk
-  - Respiratory distress / low SpO2 + opioid (stated or administered) → respiratory depression
-  - Altered mental status / confusion + diabetes → consider hypoglycemia before other causes
-  - Heat exposure / diaphoresis + diuretic → dehydration / electrolyte risk
-  - Hypotension / low BP stated + antihypertensive medication → compounding hypotension
-  - Chest pain / ACS presentation + anticoagulant → anticoagulation management complexity
+Use the research briefs to inform your reasoning — they contain known risks, interactions, and contraindications for each identified entity. Do not limit yourself to the examples in the briefs; reason beyond them.
 
-Allergy cross-checks (always HIGH severity):
-  - Stated allergy + proposed or administered matching substance → STOP
-  - Stated allergy + active medication that shares allergen class
-
-Scene / vision findings + known medications:
-  - Vial scan identifies substance conflicting with known meds or allergies
-  - Scene drug found + patient on anticoagulation
-
-Flag everything — the paramedic can dismiss what doesn't apply. Missing a dangerous combination is worse than a false positive."""
+Be comprehensive — it is better to flag something the paramedic dismisses than to miss something grave."""
 
 
-def build_safety_prompt(entities: MedicalEntities, transcript: str = "") -> str:
+def build_safety_prompt(
+    entities: MedicalEntities,
+    transcript: str = "",
+    research_briefs: list | None = None,
+) -> str:
     from events import to_dict
     parts = [
-        "Patient entities:",
+        "=== PATIENT ENTITIES (extracted from scene) ===",
         json.dumps(to_dict(entities), indent=2),
     ]
     if transcript.strip():
-        parts.extend([
+        parts += [
             "",
-            "Recent transcript (check for proposed/administered substances vs allergies and active meds):",
-            transcript[-2500:],
-        ])
-    parts.extend(["", "Identify safety concerns. Return JSON array."])
+            "=== SCENE TRANSCRIPT (last 2000 chars) ===",
+            transcript[-2000:],
+        ]
+    if research_briefs:
+        parts += ["", "=== CLINICAL RESEARCH BRIEFS (generated for each identified entity) ==="]
+        for brief in research_briefs:
+            entity = brief.get("entity", "unknown")
+            entity_type = brief.get("entityType", "")
+            cb = brief.get("clinicalBrief") or {}
+            parts.append(f"\n--- {entity} ({entity_type}) ---")
+            if cb.get("summary"):
+                parts.append(f"Summary: {cb['summary']}")
+            if cb.get("keyRisks"):
+                parts.append("Key risks: " + "; ".join(cb["keyRisks"]))
+            if cb.get("drugInteractions"):
+                parts.append("Drug interactions: " + "; ".join(cb["drugInteractions"]))
+            if cb.get("contraindications"):
+                parts.append("Contraindications: " + "; ".join(cb["contraindications"]))
+            if cb.get("preHospitalActions"):
+                parts.append("Pre-hospital actions: " + "; ".join(cb["preHospitalActions"]))
+            elif brief.get("findings"):
+                parts.append(f"Findings: {brief['findings']}")
+    parts += ["", "=== TASK ===", "Identify ALL safety concerns. Return JSON array."]
     return "\n".join(parts)
 
 

@@ -1,114 +1,41 @@
 """
-Research agent — mirrors lib/agents/research.ts.
-Fetches PubMed citations + mock guideline data on new medications/allergies.
+Research agent — generates Claude clinical briefs for every new entity.
+Fires on: medications, allergies, conditions, significant symptoms, vision captures.
+Publishes research.completed with clinicalBrief for downstream safety reasoning.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 
 from bus import InMemoryBus, RedisBus
+from claude import call_claude_json
 from events import EVENT_CHANNELS, Citation, MedicalEntities, entities_from_dict, to_dict
+from prompts.research import RESEARCH_SYSTEM, build_research_prompt
 from redis_layer.keys import EncounterKeys
-from redis_layer.state import add_to_set, load_json, save_json
+from redis_layer.state import add_to_set, get_transcript, load_json, save_json
 
 logger = logging.getLogger(__name__)
 
-# ─── Curated mock citations per medication ─────────────────────────────────────
-
-_MockEntry = Dict[str, object]
-
-MOCK_CITATIONS: Dict[str, _MockEntry] = {
-    "warfarin": {
-        "findings": (
-            "Warfarin-treated patients presenting with ACS require careful balance of antithrombotic "
-            "therapy. Current guidelines recommend risk-stratified management weighing hemorrhagic vs. "
-            "thrombotic risk. INR monitoring is critical before initiating additional antiplatelet agents."
-        ),
-        "citations": [
-            Citation(
-                title="2023 ACC/AHA Guideline for Diagnosis and Management of Acute Coronary Syndromes",
-                url="https://www.acc.org/clinical-topics/acute-coronary-syndrome",
-                snippet="For patients on oral anticoagulation presenting with ACS, individualized decision-making is required for antiplatelet co-therapy.",
-            ),
-            Citation(
-                title="Warfarin Drug Interactions — FDA Prescribing Information",
-                url="https://www.accessdata.fda.gov/drugsatfda_docs/label/2011/009218s108lbl.pdf",
-                snippet="Increased bleeding risk with concurrent antiplatelet agents. Monitor INR closely when aspirin is co-administered.",
-            ),
-            Citation(
-                title="Triple Therapy in ACS: Balancing Stroke Prevention and Bleeding Risk (NEJM)",
-                url="https://pubmed.ncbi.nlm.nih.gov/?term=warfarin+ACS+antiplatelet+triple+therapy",
-                snippet="Dual therapy (OAC + single antiplatelet) preferred over triple therapy to reduce major bleeding without increasing thrombotic events.",
-            ),
-        ],
-    },
-    "lisinopril": {
-        "findings": (
-            "ACE inhibitors (lisinopril) are first-line for hypertension with cardiovascular comorbidities. "
-            "In ACS, ACE inhibitors reduce mortality. Long-term therapy is beneficial in patients with LV dysfunction."
-        ),
-        "citations": [
-            Citation(
-                title="JNC 8 — Evidence-Based Guideline for Management of High Blood Pressure",
-                url="https://pubmed.ncbi.nlm.nih.gov/24352797/",
-                snippet="ACE inhibitors or ARBs are recommended first-line in patients with CKD or diabetes. Strong evidence for cardiovascular risk reduction.",
-            ),
-            Citation(
-                title="GISSI-3 Trial: Lisinopril in Acute MI — Lancet",
-                url="https://pubmed.ncbi.nlm.nih.gov/7661937/",
-                snippet="Lisinopril reduced 6-week mortality in patients with acute MI when initiated within 24 hours of symptom onset.",
-            ),
-        ],
-    },
-    "aspirin": {
-        "findings": (
-            "Aspirin 162–325 mg is standard of care for ACS unless contraindicated. In anticoagulated "
-            "patients (warfarin), dual antithrombotic therapy significantly increases bleeding risk and "
-            "should be carefully considered."
-        ),
-        "citations": [
-            Citation(
-                title="ASPREE Trial: Effect of Aspirin in Older Adults — NEJM 2018",
-                url="https://pubmed.ncbi.nlm.nih.gov/30152129/",
-                snippet="Aspirin did not significantly reduce disability-free survival but increased major hemorrhage risk in healthy older adults.",
-            ),
-            Citation(
-                title="Antiplatelet Therapy in ACS — ACC/AHA 2023 Clinical Performance Measures",
-                url="https://www.acc.org/latest-in-cardiology/articles/2023/07/aspirin-acs",
-                snippet="Aspirin remains cornerstone of ACS treatment. Consider bleeding risk before combining with anticoagulation.",
-            ),
-        ],
-    },
-}
-
-ALLERGY_CITATIONS: Dict[str, _MockEntry] = {
-    "penicillin": {
-        "findings": (
-            "Documented penicillin allergy is present. Cross-reactivity with cephalosporins is "
-            "approximately 1–2%. Azithromycin, clindamycin, or vancomycin may be used as alternatives "
-            "depending on indication."
-        ),
-        "citations": [
-            Citation(
-                title="Penicillin Allergy: A Practical Guide for Clinicians — Mayo Clinic Proc.",
-                url="https://pubmed.ncbi.nlm.nih.gov/28888634/",
-                snippet="Up to 80% of patients labeled as penicillin-allergic can tolerate penicillin. Cross-reactivity with cephalosporins is ~1–2%.",
-            ),
-        ],
-    },
+SIGNIFICANT_SYMPTOMS = {
+    "chest pain", "shortness of breath", "difficulty breathing",
+    "altered mental status", "loss of consciousness", "unconscious",
+    "head trauma", "head injury", "gunshot", "stab wound", "laceration",
+    "active bleeding", "hemorrhage", "burn", "seizure", "stroke",
+    "anaphylaxis", "allergic reaction", "respiratory distress",
+    "cardiac arrest", "hypotension", "syncope", "diabetic emergency",
+    "trauma", "wound",
 }
 
 
-# ─── PubMed E-utilities ─────────────────────────────────────────────────────────
+# ─── PubMed ──────────────────────────────────────────────────────────────────
 
-async def pubmed_search(drug: str, context: str) -> Optional[List[Citation]]:
+async def pubmed_search(query: str) -> Optional[List[Citation]]:
     try:
-        query = f"{drug} {context} guidelines"
         base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
         async with httpx.AsyncClient(timeout=4.0) as client:
             search_resp = await client.get(
@@ -117,11 +44,9 @@ async def pubmed_search(drug: str, context: str) -> Optional[List[Citation]]:
             )
             if not search_resp.is_success:
                 return None
-            search_data = search_resp.json()
-            ids = search_data.get("esearchresult", {}).get("idlist", [])
+            ids = search_resp.json().get("esearchresult", {}).get("idlist", [])
             if not ids:
                 return None
-
             summary_resp = await client.get(
                 f"{base}/esummary.fcgi",
                 params={"db": "pubmed", "id": ",".join(ids), "retmode": "json"},
@@ -129,115 +54,148 @@ async def pubmed_search(drug: str, context: str) -> Optional[List[Citation]]:
             if not summary_resp.is_success:
                 return None
             result = summary_resp.json().get("result", {})
-
             citations = []
             for id_ in ids:
                 entry = result.get(id_, {})
                 if not entry.get("title"):
                     continue
                 authors = entry.get("authors", [])
-                author_str = ", ".join(a.get("name", "") for a in authors[:3])
                 year = str(entry.get("pubdate", ""))[:4]
                 source = entry.get("source", "PubMed")
                 citations.append(Citation(
                     title=f"{entry['title']} ({source}, {year})",
                     url=f"https://pubmed.ncbi.nlm.nih.gov/{id_}/",
-                    snippet=author_str,
+                    snippet=", ".join(a.get("name", "") for a in authors[:3]),
                 ))
-            return citations if citations else None
+            return citations or None
     except Exception as e:
-        logger.debug("[research] pubmed search failed: %s", e)
+        logger.debug("[research] pubmed error: %s", e)
         return None
 
 
-# ─── Agent ─────────────────────────────────────────────────────────────────────
+# ─── Core research function ───────────────────────────────────────────────────
+
+async def research_entity(
+    bus: InMemoryBus | RedisBus,
+    encounter_id: str,
+    entity: str,
+    entity_type: str,
+    entities: Optional[MedicalEntities] = None,
+    transcript: str = "",
+) -> None:
+    """Generate a clinical brief for one entity and publish research.completed."""
+    cache_key = f"{entity_type}:{entity.lower()}"
+    is_new = await add_to_set(EncounterKeys.researched_meds(encounter_id), cache_key)
+    if not is_new:
+        return
+
+    logger.info("[research] researching %s '%s' for encounter %s", entity_type, entity, encounter_id)
+
+    # 1. Claude clinical brief
+    brief_raw = await call_claude_json(
+        RESEARCH_SYSTEM,
+        build_research_prompt(entity, entity_type, entities, transcript),
+        "research",
+    )
+    clinical_brief: Optional[Dict[str, Any]] = None
+    if brief_raw and isinstance(brief_raw, dict):
+        clinical_brief = brief_raw
+
+    # 2. PubMed citations — best-effort, non-blocking
+    pubmed_query = f"{entity} EMS pre-hospital emergency guidelines"
+    pubmed_cites = await pubmed_search(pubmed_query)
+
+    # 3. Findings text for UI
+    if clinical_brief:
+        findings = clinical_brief.get("summary", f"{entity}: clinical brief generated.")
+        risks = clinical_brief.get("keyRisks", [])
+        if risks:
+            findings += " Key risks: " + "; ".join(risks[:3]) + "."
+    else:
+        findings = f"{entity}: review contraindications and interactions for this patient's presentation."
+
+    # 4. Citations
+    citations: List[Citation] = []
+    if pubmed_cites:
+        citations.extend(pubmed_cites[:3])
+    if not citations:
+        citations.append(Citation(
+            title=f"{entity} — PubMed",
+            url=f"https://pubmed.ncbi.nlm.nih.gov/?term={entity.replace(' ', '+')}+guidelines",
+            snippet=f"Clinical references for {entity}.",
+        ))
+
+    payload: Dict[str, Any] = {
+        "encounterId": encounter_id,
+        "entity": entity,
+        "entityType": entity_type,
+        "query": f"{entity} — {entity_type} in pre-hospital context",
+        "clinicalBrief": clinical_brief,
+        "findings": findings,
+        "citations": [to_dict(c) for c in citations],
+        "completedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+    prior = await load_json(EncounterKeys.research(encounter_id)) or []
+    await save_json(EncounterKeys.research(encounter_id), prior + [payload])
+    await bus.publish(EVENT_CHANNELS.RESEARCH_COMPLETED, payload)
+
+
+# ─── Agent ────────────────────────────────────────────────────────────────────
 
 async def start_research_agent(bus: InMemoryBus | RedisBus) -> Callable[[], None]:
     async def on_facts_extracted(envelope: dict) -> None:
         payload = envelope.get("payload", {})
         encounter_id = payload.get("encounterId", "")
         entities = entities_from_dict(payload.get("entities", {}))
+        transcript = await get_transcript(encounter_id)
 
-        await _research_medications(bus, encounter_id, entities)
-        await _research_allergies(bus, encounter_id, entities)
+        tasks = []
 
-    return await bus.subscribe(EVENT_CHANNELS.FACTS_EXTRACTED, on_facts_extracted)
+        for med in entities.medications:
+            tasks.append(research_entity(
+                bus, encounter_id, med.name, "medication", entities, transcript,
+            ))
 
+        for allergy in entities.allergies:
+            tasks.append(research_entity(
+                bus, encounter_id, allergy, "allergy", entities, transcript,
+            ))
 
-async def _research_medications(
-    bus: InMemoryBus | RedisBus,
-    encounter_id: str,
-    entities: MedicalEntities,
-) -> None:
-    for med in entities.medications:
-        key = med.name.lower()
-        is_new = await add_to_set(EncounterKeys.researched_meds(encounter_id), key)
-        if not is_new:
-            continue
+        for condition in entities.conditions:
+            tasks.append(research_entity(
+                bus, encounter_id, condition, "condition", entities, transcript,
+            ))
 
-        context = (
-            "chest pain ACS"
-            if any("chest pain" in s for s in entities.symptoms)
-            else "cardiovascular"
+        for symptom in entities.symptoms:
+            if any(sig in symptom.lower() for sig in SIGNIFICANT_SYMPTOMS):
+                tasks.append(research_entity(
+                    bus, encounter_id, symptom, "symptom", entities, transcript,
+                ))
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def on_vision_captured(envelope: dict) -> None:
+        payload = envelope.get("payload", {})
+        encounter_id = payload.get("encounterId", "")
+        identified = payload.get("identified", "")
+        if not identified:
+            return
+
+        facts_raw = await load_json(EncounterKeys.facts(encounter_id))
+        entities = entities_from_dict(facts_raw) if facts_raw else None
+        transcript = await get_transcript(encounter_id)
+
+        await research_entity(
+            bus, encounter_id, identified, "medication", entities, transcript,
         )
 
-        mock = MOCK_CITATIONS.get(key)
-        pubmed_cites = await pubmed_search(med.name, context)
+    unsub_facts = await bus.subscribe(EVENT_CHANNELS.FACTS_EXTRACTED, on_facts_extracted)
+    unsub_vision = await bus.subscribe(EVENT_CHANNELS.VISION_CAPTURED, on_vision_captured)
 
-        if pubmed_cites:
-            mock_cites: List[Citation] = list(mock["citations"])[:1] if mock else []  # type: ignore[index]
-            citations = mock_cites + pubmed_cites[:2]
-            findings = str(mock["findings"]) if mock else (  # type: ignore[index]
-                f"{med.name}: Clinical evidence reviewed. See citations for drug interactions "
-                "and dosing guidelines relevant to the current presentation."
-            )
-        else:
-            citations = list(mock["citations"]) if mock else [  # type: ignore[index]
-                Citation(
-                    title=f"{med.name} — PubMed Search",
-                    url=f"https://pubmed.ncbi.nlm.nih.gov/?term={med.name.replace(' ', '+')}+guidelines",
-                    snippet=f"Search results for {med.name} clinical guidelines.",
-                )
-            ]
-            findings = str(mock["findings"]) if mock else (  # type: ignore[index]
-                f"{med.name}: Review contraindications and interactions relevant to current presentation."
-            )
+    def stop() -> None:
+        unsub_facts()
+        unsub_vision()
 
-        payload = {
-            "encounterId": encounter_id,
-            "query": f"{med.name} {context}",
-            "findings": findings,
-            "citations": [to_dict(c) for c in citations],
-            "completedAt": datetime.now(timezone.utc).isoformat(),
-        }
-
-        prior = await load_json(EncounterKeys.research(encounter_id)) or []
-        await save_json(EncounterKeys.research(encounter_id), prior + [payload])
-        await bus.publish(EVENT_CHANNELS.RESEARCH_COMPLETED, payload)
-
-
-async def _research_allergies(
-    bus: InMemoryBus | RedisBus,
-    encounter_id: str,
-    entities: MedicalEntities,
-) -> None:
-    for allergy in entities.allergies:
-        key = f"allergy:{allergy.lower()}"
-        is_new = await add_to_set(EncounterKeys.researched_meds(encounter_id), key)
-        if not is_new:
-            continue
-
-        allergy_key = allergy.lower().replace(" allergy", "").strip()
-        allergy_data = ALLERGY_CITATIONS.get(allergy_key)
-
-        payload = {
-            "encounterId": encounter_id,
-            "query": f"{allergy} management",
-            "findings": str(allergy_data["findings"]) if allergy_data else (  # type: ignore[index]
-                f"{allergy} allergy documented. Verify all ordered medications for cross-reactivity."
-            ),
-            "citations": [to_dict(c) for c in allergy_data["citations"]] if allergy_data else [],  # type: ignore[index]
-            "completedAt": datetime.now(timezone.utc).isoformat(),
-        }
-
-        await bus.publish(EVENT_CHANNELS.RESEARCH_COMPLETED, payload)
+    return stop
