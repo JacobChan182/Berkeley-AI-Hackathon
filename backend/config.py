@@ -17,7 +17,7 @@ import os
 # ── Defaults ──────────────────────────────────────────────────────────────────
 HAIKU_MODEL: str = "claude-haiku-4-5"
 SONNET_MODEL: str = "claude-sonnet-4-6"
-LOCAL_MODEL: str = "google/gemma-4-26b-a4b"
+LOCAL_MODEL: str = "google/gemma-4-12b-qat"
 
 # ── Per-agent models (env > default) ─────────────────────────────────────────
 AGENT_MODELS: dict[str, str] = {

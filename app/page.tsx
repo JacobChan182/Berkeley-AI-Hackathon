@@ -14,21 +14,21 @@ const AGENTS = [
     name: "Extraction",
     accent: "text-clinical-300",
     dot: "bg-clinical-400",
-    desc: "Pulls allergies, medications, conditions, and symptoms the moment they're spoken.",
+    desc: "Pulls allergies, medications, conditions, and symptoms from the transcript.",
   },
   {
     n: "03",
     name: "Timeline",
     accent: "text-clinical-300",
     dot: "bg-clinical-400",
-    desc: "Assembles a GPS-anchored narrative of the entire call.",
+    desc: "Assembles a time-anchored narrative of the entire call.",
   },
   {
     n: "04",
     name: "Safety",
     accent: "text-signal-300",
     dot: "bg-signal-400",
-    desc: "Flags missed follow-ups, drug interactions, and NREMT gaps — from stated facts only.",
+    desc: "Flags missed follow-ups, drug interactions, and NREMT gaps.",
   },
   {
     n: "05",
@@ -42,7 +42,7 @@ const AGENTS = [
     name: "Handoff",
     accent: "text-vitals-400",
     dot: "bg-vitals-400",
-    desc: "Generates the structured ED report — the money shot — in one tap.",
+    desc: "Generates the structured ED report for the next shift.",
   },
 ];
 
@@ -50,7 +50,7 @@ const FLOW = [
   { k: "Scene arrival", v: "Mic and camera go live the moment you reach the patient." },
   { k: "Live capture", v: "Speech, vitals, telemetry, and what the camera sees merge into one picture." },
   { k: "Real-time safety", v: "Six agents cross-check every stated fact as the call unfolds." },
-  { k: "Handoff", v: "One tap turns a messy scene into a clean report for the receiving ED." },
+  { k: "Handoff", v: "Turns a messy scene into a clean report for the receiving ED." },
 ];
 
 export default function Home() {
