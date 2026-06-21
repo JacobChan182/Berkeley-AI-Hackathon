@@ -1,5 +1,4 @@
 import type { TranscriptLine } from "@/hooks/useEncounterEvents";
-import { useEffect, useRef } from "react";
 
 const speakerStyles: Record<string, string> = {
   doctor: "bg-clinical-100 text-clinical-900",
@@ -8,12 +7,6 @@ const speakerStyles: Record<string, string> = {
 };
 
 export function TranscriptPanel({ lines }: { lines: TranscriptLine[] }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines.length]);
-
   return (
     <div className="flex flex-col h-full">
       <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
@@ -33,7 +26,6 @@ export function TranscriptPanel({ lines }: { lines: TranscriptLine[] }) {
             <span className="text-slate-800">{line.text}</span>
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
