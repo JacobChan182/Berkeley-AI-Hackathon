@@ -23,12 +23,55 @@ Railway builds from your repo. Make sure these files are on `main`:
 - `Dockerfile`, `Dockerfile.dev`
 - `backend/Dockerfile`
 - `railway.frontend.toml`, `railway.backend.toml`
-- `docker-compose.prod.yml`
+- `app/api/[...path]/route.ts` (runtime API proxy)
+- `scripts/railway-deploy.sh`
 
 ```bash
-git add Dockerfile Dockerfile.dev backend/Dockerfile railway.*.toml docs/DEPLOY.md docker-compose*.yml backend/main.py .env.example README.md
-git commit -m "Add Railway production deploy config"
 git push origin main
+```
+
+### Step 0b — Deploy everything via CLI (recommended)
+
+Prerequisites: [Railway CLI](https://docs.railway.com/guides/cli) installed and logged in (`railway login`).
+
+1. Create a Redis Cloud database and add `REDIS_URL=rediss://...` to your local `.env`.
+2. From the repo root:
+
+```bash
+chmod +x scripts/railway-deploy.sh
+./scripts/railway-deploy.sh
+```
+
+The script:
+- Sets backend env vars from `.env` (Redis Cloud, Anthropic, Deepgram)
+- Deploys `nos-backend` (FastAPI + `backend/Dockerfile`)
+- Sets `PYTHON_BACKEND_URL` on the frontend from the backend domain
+- Deploys `Berkeley-AI-Hackathon` frontend service
+
+Override defaults if needed:
+
+```bash
+RAILWAY_PROJECT_ID=... RAILWAY_BACKEND_SERVICE=nos-backend RAILWAY_FRONTEND_SERVICE=Berkeley-AI-Hackathon ./scripts/railway-deploy.sh
+```
+
+Manual one-off deploys:
+
+```bash
+railway login
+railway link -p YOUR_PROJECT_ID -e production -s nos-backend
+cp railway.backend.toml railway.toml && railway up -y -d -s nos-backend
+
+railway link -s Berkeley-AI-Hackathon
+railway variable set PYTHON_BACKEND_URL=https://YOUR-BACKEND.up.railway.app -s Berkeley-AI-Hackathon
+cp railway.frontend.toml railway.toml && railway up -y -d -s Berkeley-AI-Hackathon
+rm -f railway.toml
+```
+
+Verify:
+
+```bash
+curl https://YOUR-BACKEND.up.railway.app/api/status   # redis.connected: true
+curl https://YOUR-FRONTEND.up.railway.app/api/status  # same JSON via proxy
 ```
 
 ### Step 1 — Create Redis Cloud database

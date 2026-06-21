@@ -12,6 +12,8 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+ARG PYTHON_BACKEND_URL=http://localhost:8000
+ENV PYTHON_BACKEND_URL=$PYTHON_BACKEND_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

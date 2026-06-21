@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.local
 .env*.local
+railway.toml
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
