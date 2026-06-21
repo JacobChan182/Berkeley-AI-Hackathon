@@ -19,13 +19,28 @@ HAIKU_MODEL: str = "claude-haiku-4-5"
 SONNET_MODEL: str = "claude-sonnet-4-6"
 LOCAL_MODEL: str = "google/gemma-4-12b-qat"
 
+
+def _using_local_proxy() -> bool:
+    return bool(os.environ.get("ANTHROPIC_BASE_URL", "").strip())
+
+
+def _default_text_model() -> str:
+    """Global default for text agents — Claude on api.anthropic.com, LOCAL_MODEL on a proxy."""
+    for key in ("ANTHROPIC_MODEL", "ANTHROPIC_MODEL_DEFAULT"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return LOCAL_MODEL if _using_local_proxy() else HAIKU_MODEL
+
+
 # ── Per-agent models (env > default) ─────────────────────────────────────────
 AGENT_MODELS: dict[str, str] = {
-    "extraction": os.environ.get("ANTHROPIC_MODEL_EXTRACTION", LOCAL_MODEL),
-    "safety": os.environ.get("ANTHROPIC_MODEL_SAFETY", LOCAL_MODEL),
-    "handoff": os.environ.get("ANTHROPIC_MODEL_HANDOFF", LOCAL_MODEL),
-    "timeline": os.environ.get("ANTHROPIC_MODEL_TIMELINE", LOCAL_MODEL),
-    "vision": os.environ.get("ANTHROPIC_MODEL_VISION", LOCAL_MODEL),
+    "extraction": os.environ.get("ANTHROPIC_MODEL_EXTRACTION") or _default_text_model(),
+    "safety": os.environ.get("ANTHROPIC_MODEL_SAFETY") or _default_text_model(),
+    "handoff": os.environ.get("ANTHROPIC_MODEL_HANDOFF") or SONNET_MODEL,
+    "timeline": os.environ.get("ANTHROPIC_MODEL_TIMELINE") or HAIKU_MODEL,
+    # Vision requires a multimodal Claude model on the real Anthropic API.
+    "vision": os.environ.get("ANTHROPIC_MODEL_VISION") or SONNET_MODEL,
 }
 
 # ── Per-agent max tokens (env > default) ──────────────────────────────────────
