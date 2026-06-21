@@ -17,35 +17,131 @@ class SafetyResult:
     rationale: str
 
 
-SAFETY_SYSTEM = """You are a clinical safety flagging agent for pre-hospital EMS/ambulance encounters. For demo purposes only — not for clinical use.
+SAFETY_SYSTEM = """You are a clinical safety intelligence agent for Nos, a pre-hospital EMS/ambulance AI assistant. For demo purposes only — not for clinical use.
 
-Given medical entities from an ambulance scene encounter, identify safety concerns based ONLY on stated facts.
+Analyse the full patient picture — every extracted entity AND the scene transcript — and flag any combination of factors that creates patient risk. Think beyond drug-drug pairs: injuries and scene circumstances interact with medications and conditions just as dangerously.
+
 Return ONLY a raw JSON array (no markdown):
 [{ "concern": string, "severity": "low"|"medium"|"high", "rationale": string }]
 
-Return an empty array [] if no concerns are identified.
+Return [] if no concerns are identified.
 
-CRITICAL RULE: Only flag concerns based on STATED facts — never infer from demographics alone (e.g. never flag "age → ACS" without a stated symptom).
+CRITICAL RULES:
+- Only flag concerns grounded in STATED facts — something said on scene, extracted from dialogue, or found via vision scan
+- Never infer from demographics alone (age without a stated symptom is not a flag)
+- Use "consider …" / "verify …" language — never a definitive diagnosis
+- Each rationale must cite the specific stated facts that triggered it
 
-Focus on:
-- Anticoagulant + acute chest pain — stated warfarin/heparin + stated chest pain
-- Drug-drug interactions — e.g. warfarin + aspirin (both must be stated)
-- High-risk medication on scene (from vial scan) + patient's known medications
-- Allergy + medication cross-check
-- Mechanical valve + anticoagulation management"""
+REASON ACROSS ALL COMBINATIONS — examples of what to catch:
+Drug + drug:
+  - Anticoagulant (warfarin/heparin/enoxaparin) + NSAID (ibuprofen/naproxen/ketorolac) → severe bleeding
+  - Anticoagulant + antiplatelet (aspirin/clopidogrel) → dual antithrombotic bleeding risk
+  - Beta-blocker + acute hypotension → risk of refractory bradycardia
+
+Situation + drug (the patient's condition or injury changes the risk profile of their meds):
+  - Active bleeding / trauma wound + any anticoagulant → uncontrolled hemorrhage risk
+  - Active bleeding / trauma wound + NSAID → impaired platelet function worsens bleeding
+  - Head trauma / loss of consciousness + anticoagulant → intracranial hemorrhage risk
+  - Respiratory distress / low SpO2 + opioid (stated or administered) → respiratory depression
+  - Altered mental status / confusion + diabetes → consider hypoglycemia before other causes
+  - Heat exposure / diaphoresis + diuretic → dehydration / electrolyte risk
+  - Hypotension / low BP stated + antihypertensive medication → compounding hypotension
+  - Chest pain / ACS presentation + anticoagulant → anticoagulation management complexity
+
+Allergy cross-checks (always HIGH severity):
+  - Stated allergy + proposed or administered matching substance → STOP
+  - Stated allergy + active medication that shares allergen class
+
+Scene / vision findings + known medications:
+  - Vial scan identifies substance conflicting with known meds or allergies
+  - Scene drug found + patient on anticoagulation
+
+Flag everything — the paramedic can dismiss what doesn't apply. Missing a dangerous combination is worse than a false positive."""
 
 
-def build_safety_prompt(entities: MedicalEntities) -> str:
+def build_safety_prompt(entities: MedicalEntities, transcript: str = "") -> str:
     from events import to_dict
-    return "\n".join([
+    parts = [
         "Patient entities:",
         json.dumps(to_dict(entities), indent=2),
-        "",
-        "Identify safety concerns. Return JSON array.",
-    ])
+    ]
+    if transcript.strip():
+        parts.extend([
+            "",
+            "Recent transcript (check for proposed/administered substances vs allergies and active meds):",
+            transcript[-2500:],
+        ])
+    parts.extend(["", "Identify safety concerns. Return JSON array."])
+    return "\n".join(parts)
 
 
-def heuristic_safety(entities: MedicalEntities) -> List[SafetyResult]:
+def _allergen_stem(name: str) -> str:
+    """Normalize allergen name for fuzzy matching (peaches → peach)."""
+    token = name.lower().strip()
+    if token.endswith("ies"):
+        return token[:-3] + "y"
+    if token.endswith("es") and len(token) > 3:
+        return token[:-2]
+    if token.endswith("s") and len(token) > 3:
+        return token[:-1]
+    return token
+
+
+def _allergen_in_text(allergen: str, text: str) -> bool:
+    stem = _allergen_stem(allergen)
+    lower = text.lower()
+    return stem in lower or allergen.lower() in lower
+
+
+def heuristic_allergy_flags(
+    entities: MedicalEntities,
+    transcript: str = "",
+) -> List[SafetyResult]:
+    """Flag administration conflicts and medication-allergy cross-checks."""
+    flags: List[SafetyResult] = []
+    allergies = entities.allergies
+    if not allergies:
+        return flags
+
+    tl = transcript.lower()
+    admin_keywords = (
+        "giving", "give you", "give him", "give her", "administer",
+        "administered", "feed", "feeding", "inject", "injected",
+        "start you on", "put you on", "going to give", "i'll give",
+        "thinking about giving",
+    )
+    has_admin_intent = any(kw in tl for kw in admin_keywords)
+
+    for allergy in allergies:
+        if has_admin_intent and _allergen_in_text(allergy, tl):
+            flags.append(SafetyResult(
+                concern=f"CRITICAL: Proposed/administered {allergy} despite documented allergy",
+                severity="high",
+                rationale=(
+                    f"Transcript indicates paramedic may give or has given '{allergy}' "
+                    f"while patient has documented {allergy} allergy. "
+                    "STOP — risk of anaphylaxis or severe allergic reaction."
+                ),
+            ))
+
+    meds = [m.name.lower() for m in entities.medications]
+    for allergy in allergies:
+        stem = _allergen_stem(allergy)
+        for med in meds:
+            if stem in med or med in stem:
+                flags.append(SafetyResult(
+                    concern=f"Medication conflict: {med} vs documented {allergy} allergy",
+                    severity="high",
+                    rationale=(
+                        f"Patient is documented on {med} but has stated allergy to {allergy}. "
+                        "Verify compatibility before administration."
+                    ),
+                ))
+
+    return flags
+
+
+def heuristic_safety(entities: MedicalEntities, transcript: str = "") -> List[SafetyResult]:
     flags: List[SafetyResult] = []
     meds = [m.name.lower() for m in entities.medications]
     symptoms = [s.lower() for s in entities.symptoms]
@@ -104,11 +200,20 @@ def heuristic_safety(entities: MedicalEntities) -> List[SafetyResult]:
             ),
         ))
 
-    # Low severity
+    # Allergies — administration conflicts and med cross-checks
+    flags.extend(heuristic_allergy_flags(entities, transcript))
+
+    # Drug-drug interactions among all documented/active medications
+    from prompts.drug_interactions import check_interactions, check_situational_risks
+    flags.extend(check_interactions(meds))
+
+    # Situational risks: injuries, scene context, vitals + medications
+    flags.extend(check_situational_risks(meds, entities.symptoms, entities.conditions, transcript))
+
     if has_penicillin_allergy:
         flags.append(SafetyResult(
-            concern="Penicillin allergy documented — verify ordered antibiotics",
-            severity="low",
+            concern="Penicillin allergy — avoid beta-lactam antibiotics",
+            severity="high",
             rationale=(
                 "Patient has documented penicillin allergy. Confirm no penicillin/cephalosporin "
                 "(cross-reactivity ~2%) ordered. Use alternative antibiotics if needed."
