@@ -89,7 +89,20 @@ scripts/demo-scenario.json   Ambulance demo script
 docs/DEV_A.md           Person 1 — platform & ingestion
 docs/DEV_B.md           Person 2 — clinical brain & safety
 docs/DEV_C.md           Person 3 — UI, research, CV, handoff
+docs/Claude_DEV_A.md    Dev A agent team (parallel sub-agents)
+docs/Claude_DEV_B.md    Dev B agent team (parallel sub-agents)
+docs/Claude_DEV_C.md    Dev C agent team (parallel sub-agents)
 ```
+
+## Claude Agent Teams (parallel implementation)
+
+Each dev runs **multiple Claude agents in parallel** using their team file. Each sub-agent has a copy-paste **Launch prompt**.
+
+| Dev | Agent team file | Sub-agents |
+|-----|-----------------|------------|
+| **A** | [Claude_DEV_A.md](./Claude_DEV_A.md) | Contract → Bus + Demo → Deepgram + Audio + Telemetry → Integrate |
+| **B** | [Claude_DEV_B.md](./Claude_DEV_B.md) | LLM/Debounce → Extraction → Safety + Timeline + Doc → Vision consumer → Integrate |
+| **C** | [Claude_DEV_C.md](./Claude_DEV_C.md) | Dashboard + Reducer → Timeline UI → Research + Vision + Handoff → Insights → Demo |
 
 ## Environment variables
 

@@ -166,6 +166,7 @@ Inject mock `vision.captured` to test cross-check without Dev C UI.
 
 ## Reference
 
-- [Claude.md](../Claude.md)
+- [Claude_DEV_B.md](./Claude_DEV_B.md) — **agent team launch prompts**
+- [Claude.md](./Claude.md)
 - [DEV_A.md](./DEV_A.md) · [DEV_C.md](./DEV_C.md)
 - Shared contract: `lib/events.ts` — **sync before changing**
